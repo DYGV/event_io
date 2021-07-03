@@ -1,3 +1,9 @@
+Doxyfile
+.vscode/
+html/
+latex/
+
+
 # Prerequisites
 *.d
 
