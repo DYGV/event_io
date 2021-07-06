@@ -31,8 +31,14 @@ struct server {
     struct event_config* event;
 };
 
+void init_server(struct server* server);
+void write_(struct io_event* head, char* msg);
+void read_(struct io_event* io);
+void accept_(struct io_event* io);
+
 /**
  * サーバを立ち上げる関数
+ * 立ち上げが完了したらそのファイルディスクリプタをイベント監視に追加する
  * @param struct server* server
  * @return void
  */
@@ -41,11 +47,13 @@ void init_server(struct server* server)
     int opt = 1;
     // ソケット(エンドポイント)を作成する
     if ((server->fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("socket()");
         exit(EXIT_FAILURE);
     }
-    // オプションを負荷する
+    // オプションを付加する
     if (setsockopt(server->fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                    &opt, sizeof(opt))) {
+        perror("setsockopt()");
         exit(EXIT_FAILURE);
     }
     // アドレスファミリの設定
@@ -56,12 +64,18 @@ void init_server(struct server* server)
     server->address.sin_port = htons(PORT);
     // ソケットへアドレスを付加する
     if (bind(server->fd, (struct sockaddr*)&server->address, sizeof(server->address)) < 0) {
+        perror("bind()");
         exit(EXIT_FAILURE);
     }
     // 待ち行列を5個にしてserver_fdをパッシブ(リッスン)ソケットとしてマークする
     if (listen(server->fd, 5) < 0) {
+        perror("listen()");
         exit(EXIT_FAILURE);
     }
+    // サーバのファイルディスクリプタを
+    // イベントの監視対象として追加する。
+    // IO可能になった(新規接続が来た)時にaccept_()を実行するよう登録する。
+    add_event(server->event, accept_, server, server->fd, OBS_IN);
 }
 
 /**
@@ -73,6 +87,7 @@ void init_server(struct server* server)
  */
 void write_(struct io_event* head, char* msg)
 {
+
     if (head == NULL) {
         return;
     }
@@ -96,7 +111,7 @@ void read_(struct io_event* io)
         return;
     }
     // 接続済みの全クライアントに文字列を送信する
-    write_(server->event->head->next->next, server->buf);
+    write_(server->event->head->next, server->buf);
     printf("%s\n", server->buf);
     // 0埋めしておく
     memset(server->buf, 0, sizeof(server->buf));
@@ -122,28 +137,8 @@ void accept_(struct io_event* io)
     add_event(server->event, read_, server, new_socket, OBS_IN);
 }
 
-/**
- * サーバをシャットダウンする関数
- * @param struct io_event* io 標準入力のイベント情報
- * @return void
- * @details 標準入力から文字列を読み、それが"shutdown"であればプログラムを終了する
- * "shutdown"でないときは読み込みに使った変数を0埋めして関数を抜ける。
- */
-void shutdown_(struct io_event* io)
-{
-    struct server* server = (struct server*)io->arg;
-    read(io->fd, server->buf, sizeof(server->buf));
-    if (strcmp(server->buf, "shutdown\n") == 0) {
-        printf("サーバをシャットダウンします。\n");
-        exit(EXIT_SUCCESS);
-    }
-    memset(server->buf, 0, sizeof(server->buf));
-}
-
 int main()
 {
-    // Ctrl+Cを無視する
-    signal(SIGINT, SIG_IGN);
     // サーバに関する情報を保持する構造体
     struct server server;
     // 監視するイベント処理をするための初期化処理
@@ -151,13 +146,6 @@ int main()
     // サーバを立ち上げる
     init_server(&server);
     printf("サーバを立ち上げました。\n");
-    // シャットダウン時に標準入力を使いたいので
-    // イベントの監視対象として追加する。
-    add_event(server.event, shutdown_, &server, STDIN_FILENO, OBS_IN);
-    // サーバのファイルディスクリプタを
-    // イベントの監視対象として追加する。
-    // IO可能になった(新規接続が来た)時にaccept_()を実行するよう登録する。
-    add_event(server.event, accept_, &server, server.fd, OBS_IN);
     while (1) {
         // イベント監視処理を開始する
         run_event(server.event, -1);

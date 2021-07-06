@@ -22,6 +22,10 @@ struct event_config* init_event()
     }
     // epollのインスタンスを作成
     event_config->epfd = epoll_create(MAX_EPOLL);
+    if (event_config->epfd == -1) {
+        perror("epoll_create()");
+        exit(EXIT_FAILURE);
+    }
     event_config->head = NULL;
     event_config->tail = NULL;
     return event_config;
@@ -53,7 +57,6 @@ struct io_event* add_event(struct event_config* event_config, void (*handler)(st
     io->prev = NULL;
     io->timestamp = NULL;
     io->data = NULL;
-
     // まだ監視対象がないとき(初回)
     if (event_config->head == NULL) {
         event_config->head = io;
@@ -67,7 +70,12 @@ struct io_event* add_event(struct event_config* event_config, void (*handler)(st
     struct epoll_event event;
     event.events = type;
     event.data.ptr = io;
-    epoll_ctl(event_config->epfd, EPOLL_CTL_ADD, fd, &event);
+    // インタレストリスト(監視対象のリスト)に追加する
+    // fdが既にインタレストリストに存在する場合はEEXIST
+    if (epoll_ctl(event_config->epfd, EPOLL_CTL_ADD, fd, &event) == -1) {
+        perror("epoll_ctl()");
+        exit(EXIT_FAILURE);
+    }
     return io;
 }
 
@@ -84,7 +92,11 @@ void delete_event(struct event_config* event_config, struct io_event* io)
         exit(EXIT_FAILURE);
     }
     // 監視対象から外す
-    epoll_ctl(event_config->epfd, EPOLL_CTL_DEL, io->fd,  NULL);
+    // fdがインタレストリストに存在しない場合は、ENOENT(no entry)
+    if (epoll_ctl(event_config->epfd, EPOLL_CTL_DEL, io->fd,  NULL) == -1) {
+        perror("epoll_ctl()");
+        exit(EXIT_FAILURE);
+    }
     if (io->prev != NULL) {
         // io_eventがリストが途中の要素なら
         // 前の要素のnextと次の要素をつなげる
@@ -121,7 +133,11 @@ void erase_events(struct event_config* event_config)
     struct io_event* head;
     while ((head = event_config->head) != NULL) {
         // 監視対象から外す
-        epoll_ctl(event_config->epfd, EPOLL_CTL_DEL, head->fd,  NULL);
+        // fdがインタレストリストに存在しない場合は、ENOENT(no entry)
+        if (epoll_ctl(event_config->epfd, EPOLL_CTL_DEL, head->fd, NULL) == -1) {
+            perror("epoll_ctl()");
+            exit(EXIT_FAILURE);
+        }
         free(head);
         head = NULL;
         event_config->head = event_config->head->next;
@@ -143,8 +159,16 @@ void run_event(struct event_config* event_config, int timeout)
     struct epoll_event events[MAX_EPOLL];
     // 監視対象がIO可能になるか、timoutまでブロックされる
     int event_readable = epoll_wait(event_config->epfd, events, MAX_EPOLL, timeout);
+    if (event_readable == -1) {
+        perror("epoll_wait()");
+        exit(EXIT_FAILURE);
+    }
     // IO可能になった時点のタイムスタンプ
     time_t t = time(NULL);
+    if (t == -1) {
+        perror("time()");
+        exit(EXIT_FAILURE);
+    }
     struct tm* time = localtime(&t);
     for (int i = 0; i < event_readable; i++) {
         struct io_event* io = events[i].data.ptr;
@@ -153,3 +177,4 @@ void run_event(struct event_config* event_config, int timeout)
         io->handler(io);
     }
 }
+

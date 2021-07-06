@@ -36,7 +36,7 @@ int main()
     struct event_config* config;
     config = init_event();
     add_event(config, print, "標準入力だよ", STDIN_FILENO, OBS_IN);
-    while (config != NULL) {
+    while (1) {
         run_event(config, -1);
     }
 }
