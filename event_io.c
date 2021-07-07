@@ -56,7 +56,6 @@ struct io_event* add_event(struct event_config* event_config, void (*handler)(st
     io->next = NULL;
     io->prev = NULL;
     io->timestamp = NULL;
-    io->data = NULL;
     // まだ監視対象がないとき(初回)
     if (event_config->head == NULL) {
         event_config->head = io;

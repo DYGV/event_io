@@ -30,7 +30,7 @@ struct io_event {
     int fd;
     //! そのイベントがIO可能になった時に呼び出される関数(ポインタ)
     void (*handler)(struct io_event*);
-    //! 呼び出される関数の引数
+    //! 呼び出される関数内で使いたい変数など(任意)
     void* arg;
     //! 前のio_event(連結リスト)
     struct io_event* prev;
@@ -40,8 +40,6 @@ struct io_event {
     struct tm* timestamp;
     //! 発生したイベントの種類
     observe_type type;
-    //! 任意の変数(ユーザ定義)
-    void* data;
 };
 
 /**
